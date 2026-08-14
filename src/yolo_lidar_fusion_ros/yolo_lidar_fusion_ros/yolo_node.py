@@ -1,3 +1,10 @@
+import sys
+
+sys.path.insert(
+    0,
+    "/home/seongjin1/ros2_ws/src/yolo_lidar_fusion/venv/lib/python3.10/site-packages"
+)
+
 # ROS2 기능 사용
 import rclpy
 
@@ -7,7 +14,7 @@ from rclpy.node import Node
 # 문자열 토픽 사용
 from std_msgs.msg import String
 
-# 타이머용
+# OpenCV
 import cv2
 
 # YOLO 모델
