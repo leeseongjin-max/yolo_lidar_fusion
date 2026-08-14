@@ -15,6 +15,10 @@ from std_msgs.msg import String
 
 # LiDAR PointCloud 수신용
 from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2
+
+# 수학 계산
+import math
 
 # 카메라 처리
 import cv2
@@ -30,15 +34,18 @@ class YoloNode(Node):
         # ROS2 노드 생성
         super().__init__('yolo_node')
 
-        # 검출 결과 Publish
+        # 객체 검출 결과 Publish
         self.publisher_ = self.create_publisher(
             String,
             '/detections',
             10
         )
 
-        # 최신 LiDAR 데이터 저장
+        # 최신 PointCloud 저장
         self.latest_cloud = None
+
+        # 최근 거리 저장
+        self.latest_distance = -1.0
 
         # Velodyne PointCloud 구독
         self.lidar_sub = self.create_subscription(
@@ -65,12 +72,12 @@ class YoloNode(Node):
             480
         )
 
-        # YOLO 모델 로드
+        # YOLO 모델
         self.model = YOLO(
             '/home/seongjin1/ros2_ws/src/yolo_lidar_fusion/models/yolov8n.pt'
         )
 
-        # 5Hz 실행
+        # 5Hz
         self.timer = self.create_timer(
             0.2,
             self.timer_callback
@@ -85,7 +92,41 @@ class YoloNode(Node):
 
         self.latest_cloud = msg
 
-    # YOLO 추론 수행
+        min_distance = 9999.0
+
+        try:
+
+            points = point_cloud2.read_points(
+                msg,
+                field_names=("x", "y", "z"),
+                skip_nans=True
+            )
+
+            for point in points:
+
+                x, y, z = point
+
+                distance = math.sqrt(
+                    x * x +
+                    y * y +
+                    z * z
+                )
+
+                if 0.3 < distance < min_distance:
+
+                    min_distance = distance
+
+            if min_distance < 9999.0:
+
+                self.latest_distance = min_distance
+
+        except Exception as e:
+
+            self.get_logger().error(
+                str(e)
+            )
+
+    # YOLO 추론
     def timer_callback(self):
 
         ret, frame = self.cap.read()
@@ -98,15 +139,12 @@ class YoloNode(Node):
 
             return
 
-        # YOLO 추론
         results = self.model(frame)
 
-        # Bounding Box 시각화
         annotated_frame = results[0].plot()
 
         detected_names = []
 
-        # 검출 객체 이름 수집
         for result in results:
 
             for box in result.boxes:
@@ -127,17 +165,20 @@ class YoloNode(Node):
 
             msg.data = 'none'
 
-        # ROS2 Publish
         self.publisher_.publish(msg)
 
-        # LiDAR 수신 상태 확인
         lidar_status = (
             'LiDAR OK'
             if self.latest_cloud is not None
             else 'LiDAR NOT RECEIVED'
         )
 
-        # 좌측 상단 상태 표시
+        distance_text = (
+            f'{self.latest_distance:.2f} m'
+            if self.latest_distance > 0
+            else 'N/A'
+        )
+
         cv2.putText(
             annotated_frame,
             lidar_status,
@@ -148,7 +189,16 @@ class YoloNode(Node):
             2
         )
 
-        # OpenCV 창 출력
+        cv2.putText(
+            annotated_frame,
+            f'Distance: {distance_text}',
+            (20, 80),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 255),
+            2
+        )
+
         cv2.imshow(
             'YOLO LiDAR Fusion',
             annotated_frame
@@ -163,14 +213,12 @@ class YoloNode(Node):
 
 def main(args=None):
 
-    # ROS2 시작
     rclpy.init(args=args)
 
     node = YoloNode()
 
     rclpy.spin(node)
 
-    # 종료 처리
     cv2.destroyAllWindows()
 
     node.destroy_node()
