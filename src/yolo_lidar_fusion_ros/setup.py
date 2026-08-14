@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-        ],
+        'yolo_node = yolo_lidar_fusion_ros.yolo_node:main',
+           ],
     },
 )
